@@ -1,0 +1,72 @@
+# Define paths to the CSV files
+$csvPath1 = "C:\path\to\csv1.csv"
+$csvPath2 = "C:\path\to\csv2.csv"
+$outputPath = "C:\path\to\output.xlsx"
+
+# Function to validate IPv4 Address format
+function Validate-IPv4Address {
+    param (
+        [string]$ip
+    )
+    if ($ip -match '^(25[0-5]|2[0-4][0-9]|[0-1]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[0-1]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[0-1]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[0-1]?[0-9][0-9]?)$') {
+        return $true
+    }
+    return $false
+}
+
+# Import CSV files
+$csv1 = Import-Csv -Path $csvPath1
+$csv2 = Import-Csv -Path $csvPath2
+
+# Prepare arrays to hold differences
+$differenceList = @()
+
+# Compare the CSV files
+foreach ($row1 in $csv1) {
+    $row2 = $csv2 | Where-Object { $_.Hostname -eq $row1.Hostname }
+
+    if ($row2) {
+        # Compare IPv4 addresses
+        if ($row1.'IPv4 Address' -ne $row2.'IPv4 Address') {
+            $differenceList += [pscustomobject]@{
+                Hostname      = $row1.Hostname
+                CSV1_IPv4     = $row1.'IPv4 Address'
+                CSV2_IPv4     = $row2.'IPv4 Address'
+                Issue         = "IP Address Mismatch"
+            }
+        }
+    } else {
+        # Missing hostname in CSV2
+        $differenceList += [pscustomobject]@{
+            Hostname      = $row1.Hostname
+            CSV1_IPv4     = $row1.'IPv4 Address'
+            CSV2_IPv4     = "N/A"
+            Issue         = "Hostname Missing in CSV2"
+        }
+    }
+}
+
+# Error handling for invalid IPs
+foreach ($row in $csv1 + $csv2) {
+    if ([string]::IsNullOrWhiteSpace($row.Hostname)) {
+        $differenceList += [pscustomobject]@{
+            Hostname      = "N/A"
+            CSV1_IPv4     = $row.'IPv4 Address'
+            CSV2_IPv4     = "N/A"
+            Issue         = "Missing Hostname"
+        }
+    }
+    elseif (-not (Validate-IPv4Address $row.'IPv4 Address')) {
+        $differenceList += [pscustomobject]@{
+            Hostname      = $row.Hostname
+            CSV1_IPv4     = $row.'IPv4 Address'
+            CSV2_IPv4     = "N/A"
+            Issue         = "Malformed IPv4 Address"
+        }
+    }
+}
+
+# Export differences to an Excel file
+$differenceList | Export-Excel -Path $outputPath -WorksheetName 'Differences' -AutoSize
+
+Write-Host "Comparison complete. Results exported to $outputPath."
